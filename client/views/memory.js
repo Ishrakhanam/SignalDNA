@@ -5,7 +5,18 @@ import {
   WhyThisCard
 } from '../components/cards.js';
 
-const memories = [
+const API_BASE =
+  `${window.location.protocol}//${window.location.hostname}:3000/api`;
+
+const CREATOR_ID =
+  'UC_x5XG1OV2P6uZZ5FSM9Ttw';
+
+/*
+  Demo fallback data.
+  This keeps the Memory page usable while the backend
+  is unavailable on the frontend machine.
+*/
+const demoMemories = [
   {
     title: 'Practical teaching is a strong content pattern',
     description:
@@ -36,7 +47,66 @@ const memories = [
   }
 ];
 
-export function renderMemory() {
+function extractMemoryItems(payload) {
+  if (!payload) return [];
+
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload.memories)) {
+    return payload.memories;
+  }
+
+  if (Array.isArray(payload.items)) {
+    return payload.items;
+  }
+
+  if (Array.isArray(payload.data)) {
+    return payload.data;
+  }
+
+  if (Array.isArray(payload.results)) {
+    return payload.results;
+  }
+
+  return [];
+}
+
+function normalizeMemory(item, index) {
+  return {
+    title:
+      item.title ||
+      item.name ||
+      item.pattern ||
+      item.learning ||
+      `Remembered pattern ${index + 1}`,
+
+    description:
+      item.description ||
+      item.summary ||
+      item.text ||
+      item.content ||
+      'A recurring signal identified from creator evidence.',
+
+    source:
+      item.source ||
+      item.evidence ||
+      'SignalDNA memory',
+
+    tone:
+      index % 2 === 0
+        ? 'primary'
+        : 'secondary'
+  };
+}
+
+function renderMemoryContent(memories, isLive = false) {
+  const items =
+    memories.length > 0
+      ? memories
+      : demoMemories;
+
   return `
     ${SectionHeader({
       eyebrow: 'SignalDNA memory',
@@ -49,19 +119,23 @@ export function renderMemory() {
 
       <article class="metric-card accent-primary">
         <div class="metric-label">Memory observations</div>
-        <div class="metric-value">28</div>
+        <div class="metric-value">${items.length}</div>
         <div class="metric-detail">patterns recorded</div>
       </article>
 
       <article class="metric-card accent-secondary">
         <div class="metric-label">Confirmed patterns</div>
-        <div class="metric-value">12</div>
+        <div class="metric-value">
+          ${Math.min(items.length, 12)}
+        </div>
         <div class="metric-detail">supported by evidence</div>
       </article>
 
       <article class="metric-card accent-neutral">
         <div class="metric-label">Recent learnings</div>
-        <div class="metric-value">5</div>
+        <div class="metric-value">
+          ${Math.min(items.length, 5)}
+        </div>
         <div class="metric-detail">new signals</div>
       </article>
 
@@ -123,13 +197,14 @@ export function renderMemory() {
       ${SectionHeader({
         eyebrow: 'Remembered patterns',
         title: 'What we currently know',
-        description:
-          'These are frontend demonstration records and can later be connected to backend memory data.'
+        description: isLive
+          ? 'These patterns were loaded from SignalDNA memory.'
+          : 'Showing frontend fallback records until the SignalDNA backend is available.'
       })}
 
       <div class="evidence-stack">
 
-        ${memories.map(item =>
+        ${items.map(item =>
           EvidenceCard({
             title: item.title,
             evidence: item.description,
@@ -173,10 +248,18 @@ export function renderMemory() {
         </div>
 
         ${EvidenceCard({
-          title: 'Practical demonstrations remain important',
+          title:
+            items[0]?.title ||
+            'Practical demonstrations remain important',
+
           evidence:
+            items[0]?.description ||
             'Recent content and audience signals continue to connect practical explanations with meaningful engagement.',
-          source: 'Content + audience evidence',
+
+          source:
+            items[0]?.source ||
+            'Content + audience evidence',
+
           tone: 'primary'
         })}
 
@@ -199,9 +282,15 @@ export function renderMemory() {
 
         ${EvidenceCard({
           title: 'Current memory confidence',
+
           evidence:
             'The strongest remembered patterns are connected to practical teaching, step-by-step explanations, and concrete demonstrations.',
-          source: 'Content DNA + audience evidence',
+
+          source:
+            isLive
+              ? 'SignalDNA memory'
+              : 'Content DNA + audience evidence',
+
           tone: 'secondary'
         })}
 
@@ -245,5 +334,72 @@ export function renderMemory() {
       </button>
 
     </section>
+
+    ${
+      !isLive
+        ? `
+          <div class="small-note" style="margin-top: 16px;">
+            Backend memory data is not currently available on this frontend machine.
+            The page is using fallback records.
+          </div>
+        `
+        : ''
+    }
   `;
+}
+
+export function renderMemory() {
+  return renderMemoryContent(
+    demoMemories,
+    false
+  );
+}
+
+export async function mountMemory() {
+  const root =
+    document.getElementById('view-root');
+
+  if (!root) return;
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/memory/recall?creatorId=${encodeURIComponent(CREATOR_ID)}`
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Memory API returned ${response.status}`
+      );
+    }
+
+    const payload =
+      await response.json();
+
+    const rawItems =
+      extractMemoryItems(payload);
+
+    const memories =
+      rawItems.map(normalizeMemory);
+
+    if (!memories.length) {
+      return;
+    }
+
+    root.innerHTML =
+      renderMemoryContent(
+        memories,
+        true
+      );
+
+  } catch (error) {
+    console.warn(
+      'SignalDNA memory backend unavailable. Using fallback memory data.',
+      error
+    );
+
+    /*
+      Keep the already-rendered Memory UI.
+      We deliberately do not replace it with an error page.
+    */
+  }
 }

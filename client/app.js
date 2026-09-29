@@ -13,23 +13,27 @@ import {
   mountContentLibrary
 } from './views/content-library.js';
 
-import { renderAudienceIntelligence } from './views/audience-intelligence.js';
+import {
+  renderAudienceIntelligence
+} from './views/audience-intelligence.js';
 
-import { renderContentDNA } from './views/content-dna.js';
+import {
+  renderContentDNA,
+  mountContentDNA
+} from './views/content-dna.js';
 
 import { renderOpportunities } from './views/opportunities.js';
-
 import { renderExperiments } from './views/experiments.js';
-
 import { renderSettings } from './views/settings.js';
 
-import { renderMemory } from './views/memory.js';
+import {
+  renderMemory,
+  mountMemory
+} from './views/memory.js';
 
 import { renderGenericView } from './views/generic.js';
 
-
 const routes = {
-
   landing: {
     title: 'SignalDNA',
     subtitle: 'Your content has patterns. We remember them.',
@@ -89,29 +93,20 @@ const routes = {
     subtitle: 'Workspace and creator context.',
     render: renderSettings
   }
-
 };
-
 
 let currentRoute = 'dashboard';
 
-
 function getInitialRoute() {
-
   const hash = window.location.hash
     .replace('#/', '')
     .trim();
 
   return routes[hash] ? hash : 'dashboard';
-
 }
 
-
 function renderRoute(route) {
-
-  currentRoute = routes[route]
-    ? route
-    : 'dashboard';
+  currentRoute = routes[route] ? route : 'dashboard';
 
   const page = routes[currentRoute];
 
@@ -134,32 +129,32 @@ function renderRoute(route) {
     behavior: 'smooth'
   });
 
-
   if (currentRoute === 'dashboard') {
     mountDashboardCharts();
   }
-
 
   if (currentRoute === 'content-library') {
     mountContentLibrary();
   }
 
+  if (currentRoute === 'content-dna') {
+    mountContentDNA();
+  }
+
+  if (currentRoute === 'memory') {
+    mountMemory();
+  }
 }
 
-
 function navigate(route) {
-
   if (!routes[route]) return;
 
   window.location.hash = `/${route}`;
 
   renderRoute(route);
-
 }
 
-
 function showToast(message) {
-
   const root =
     document.getElementById('toast-root');
 
@@ -167,39 +162,26 @@ function showToast(message) {
     MemoryUpdateToast(message);
 
   requestAnimationFrame(() => {
-
     root
       .querySelector('.memory-toast')
       ?.classList.add('show');
-
   });
 
   window.setTimeout(() => {
-
     root
       .querySelector('.memory-toast')
       ?.classList.remove('show');
-
   }, 4200);
-
 }
 
-
 document.addEventListener('click', event => {
-
   const routeTarget =
     event.target.closest('[data-route]');
 
   if (routeTarget) {
-
-    navigate(
-      routeTarget.dataset.route
-    );
-
+    navigate(routeTarget.dataset.route);
     return;
-
   }
-
 
   const actionTarget =
     event.target.closest('[data-action]');
@@ -209,75 +191,39 @@ document.addEventListener('click', event => {
   const action =
     actionTarget.dataset.action;
 
-
   if (action === 'open-sidebar') {
-
-    document.body.classList.add(
-      'sidebar-open'
-    );
-
+    document.body.classList.add('sidebar-open');
   }
-
 
   if (action === 'close-sidebar') {
-
-    document.body.classList.remove(
-      'sidebar-open'
-    );
-
+    document.body.classList.remove('sidebar-open');
   }
-
 
   if (action === 'dismiss-toast') {
-
-    document.getElementById(
-      'toast-root'
-    ).innerHTML = '';
-
+    document.getElementById('toast-root').innerHTML = '';
   }
 
-
   if (action === 'memory-update') {
-
     showToast(
       'A new learning has been prepared for review.'
     );
-
   }
 
-
   if (action === 'start-experiment') {
-
     showToast(
       'Experiment started. Results can be recorded after publishing.'
     );
-
   }
 
-
   if (action === 'save-settings') {
-
     showToast(
       'Settings saved for this frontend session.'
     );
-
   }
-
 });
 
+window.addEventListener('hashchange', () => {
+  renderRoute(getInitialRoute());
+});
 
-window.addEventListener(
-  'hashchange',
-  () => {
-
-    renderRoute(
-      getInitialRoute()
-    );
-
-  }
-);
-
-
-renderRoute(
-  getInitialRoute()
-);
+renderRoute(getInitialRoute());

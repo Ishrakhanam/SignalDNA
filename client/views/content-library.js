@@ -6,7 +6,10 @@ import {
   WhyThisCard
 } from '../components/cards.js';
 
-const contentItems = [
+const API_BASE =
+  `${window.location.protocol}//${window.location.hostname}:3000/api`;
+
+const demoContentItems = [
   {
     title: 'How I Debug a React Bug in 5 Minutes',
     platform: 'LinkedIn',
@@ -83,6 +86,413 @@ const filters = [
   'Walkthrough'
 ];
 
+let contentState = {
+  items: demoContentItems,
+  loading: true,
+  usingDemoData: true,
+  error: null
+};
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function formatNumber(value) {
+  if (value === null || value === undefined || value === '') {
+    return '—';
+  }
+
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return escapeHtml(value);
+  }
+
+  if (number >= 1000000) {
+    return `${(number / 1000000).toFixed(1)}M`;
+  }
+
+  if (number >= 1000) {
+    return `${(number / 1000).toFixed(1)}K`;
+  }
+
+  return number.toLocaleString();
+}
+
+function formatPercentage(value) {
+  if (value === null || value === undefined || value === '') {
+    return '—';
+  }
+
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return escapeHtml(value);
+  }
+
+  return `${number.toFixed(1)}%`;
+}
+
+function getFirstValue(object, keys) {
+  for (const key of keys) {
+    if (
+      object &&
+      object[key] !== undefined &&
+      object[key] !== null &&
+      object[key] !== ''
+    ) {
+      return object[key];
+    }
+  }
+
+  return null;
+}
+
+function normalizeVideo(video) {
+  const title = getFirstValue(video, [
+    'title',
+    'name',
+    'videoTitle'
+  ]) || 'Untitled video';
+
+  const platform =
+    getFirstValue(video, [
+      'platform',
+      'source',
+      'network'
+    ]) || 'YouTube';
+
+  const type =
+    getFirstValue(video, [
+      'type',
+      'contentType',
+      'format'
+    ]) || 'Video';
+
+  const reachValue = getFirstValue(video, [
+    'reach',
+    'views',
+    'viewCount',
+    'viewsCount'
+  ]);
+
+  const engagementValue = getFirstValue(video, [
+    'engagement',
+    'engagementRate',
+    'engagement_rate'
+  ]);
+
+  const savesValue = getFirstValue(video, [
+    'saves',
+    'saveCount',
+    'savedCount'
+  ]);
+
+  const pattern =
+    getFirstValue(video, [
+      'pattern',
+      'contentPattern',
+      'dnaPattern'
+    ]) || 'Content observation';
+
+  const evidence =
+    getFirstValue(video, [
+      'evidence',
+      'description',
+      'summary'
+    ]) ||
+    'This content contributes evidence to your creator pattern history.';
+
+  return {
+    title: String(title),
+    platform: String(platform),
+    type: String(type),
+    reach:
+      reachValue === null
+        ? '—'
+        : formatNumber(reachValue),
+    engagement:
+      engagementValue === null
+        ? '—'
+        : formatPercentage(engagementValue),
+    saves:
+      savesValue === null
+        ? '—'
+        : formatNumber(savesValue),
+    pattern: String(pattern),
+    evidence: String(evidence),
+    source: 'Backend content data'
+  };
+}
+
+function extractVideos(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return [];
+  }
+
+  const possibleArrays = [
+    payload.videos,
+    payload.items,
+    payload.data,
+    payload.results,
+    payload.content
+  ];
+
+  for (const value of possibleArrays) {
+    if (Array.isArray(value)) {
+      return value;
+    }
+  }
+
+  if (payload.data && typeof payload.data === 'object') {
+    const nestedArrays = [
+      payload.data.videos,
+      payload.data.items,
+      payload.data.results,
+      payload.data.content
+    ];
+
+    for (const value of nestedArrays) {
+      if (Array.isArray(value)) {
+        return value;
+      }
+    }
+  }
+
+  return [];
+}
+
+async function loadContentData() {
+  try {
+    const response = await fetch(
+      `${API_BASE}/video/sync?platform=youtube&creatorId=UC_x5XG1OV2P6uZZ5FSM9Ttw&limit=20`
+    );
+
+    if (!response.ok) {
+      throw new Error(`Content API returned ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const videos = extractVideos(payload);
+
+    if (!videos.length) {
+      throw new Error('No content records returned.');
+    }
+
+    contentState = {
+      items: videos.map(normalizeVideo),
+      loading: false,
+      usingDemoData: false,
+      error: null
+    };
+  } catch (error) {
+    console.warn(
+      'SignalDNA Content Library: backend unavailable, keeping frontend data.',
+      error
+    );
+
+    contentState = {
+      items: demoContentItems,
+      loading: false,
+      usingDemoData: true,
+      error: error
+    };
+  }
+
+  updateContentLibrary();
+}
+
+function renderContentItems() {
+  if (contentState.loading) {
+    return `
+      <div class="content-library-loading">
+        <div class="small-note">
+          Loading content evidence…
+        </div>
+      </div>
+    `;
+  }
+
+  if (!contentState.items.length) {
+    return `
+      <div class="content-library-loading">
+        <div class="card-kicker">No content yet</div>
+        <p class="small-note">
+          No content records are currently available.
+        </p>
+      </div>
+    `;
+  }
+
+  return contentState.items
+    .map(
+      (item) => `
+        <article
+          class="content-item"
+          data-content-type="${escapeHtml(item.type)}"
+        >
+
+          <div class="content-item-main">
+
+            <div class="content-item-heading">
+
+              <div>
+
+                <div class="content-meta">
+                  <span>${escapeHtml(item.platform)}</span>
+                  <span>·</span>
+                  <span>${escapeHtml(item.type)}</span>
+                </div>
+
+                <h3>${escapeHtml(item.title)}</h3>
+
+              </div>
+
+              ${Tag({
+                children: escapeHtml(item.pattern),
+                tone: 'primary'
+              })}
+
+            </div>
+
+            <p class="content-evidence">
+              ${escapeHtml(item.evidence)}
+            </p>
+
+            <div class="content-stats">
+
+              <div>
+                <span>Reach</span>
+                <strong>${escapeHtml(item.reach)}</strong>
+              </div>
+
+              <div>
+                <span>Engagement</span>
+                <strong>${escapeHtml(item.engagement)}</strong>
+              </div>
+
+              <div>
+                <span>Saves</span>
+                <strong>${escapeHtml(item.saves)}</strong>
+              </div>
+
+            </div>
+
+          </div>
+
+          <div class="content-item-side">
+
+            <span class="small-note">
+              Evidence
+            </span>
+
+            <span class="evidence-mark">
+              ✓
+            </span>
+
+            <span class="small-note">
+              ${escapeHtml(item.source)}
+            </span>
+
+          </div>
+
+        </article>
+      `
+    )
+    .join('');
+}
+
+function renderLibraryNotice() {
+  if (contentState.loading) {
+    return '';
+  }
+
+  if (contentState.usingDemoData) {
+    return `
+      <div class="small-note" style="margin-top: 10px;">
+        Live content data will appear when the SignalDNA backend is available.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="small-note" style="margin-top: 10px;">
+      Showing live content data from SignalDNA.
+    </div>
+  `;
+}
+
+function getLibraryMetrics() {
+  const items = contentState.items;
+
+  if (contentState.usingDemoData || !items.length) {
+    return {
+      count: '24',
+      strongest: 'Tutorial',
+      evidence: '18'
+    };
+  }
+
+  const typeCounts = {};
+
+  items.forEach((item) => {
+    typeCounts[item.type] =
+      (typeCounts[item.type] || 0) + 1;
+  });
+
+  const strongestFormat =
+    Object.entries(typeCounts)
+      .sort((a, b) => b[1] - a[1])[0]?.[0] || 'Video';
+
+  return {
+    count: String(items.length),
+    strongest: strongestFormat,
+    evidence: String(items.length)
+  };
+}
+
+function renderLibraryOverview() {
+  const metrics = getLibraryMetrics();
+
+  return `
+    <section class="metric-grid three-col">
+
+      ${MetricCard({
+        label: 'Content pieces',
+        value: metrics.count,
+        detail: contentState.usingDemoData
+          ? 'current library preview'
+          : 'from connected content',
+        accent: 'primary'
+      })}
+
+      ${MetricCard({
+        label: 'Strongest format',
+        value: metrics.strongest,
+        detail: 'based on current content mix',
+        accent: 'secondary'
+      })}
+
+      ${MetricCard({
+        label: 'Evidence signals',
+        value: metrics.evidence,
+        detail: 'content records observed',
+        accent: 'neutral'
+      })}
+
+    </section>
+  `;
+}
+
 export function renderContentLibrary() {
   return `
     <section class="welcome-row">
@@ -109,30 +519,9 @@ export function renderContentLibrary() {
         'A structured view of recent content and the evidence each piece contributes to your creator memory.'
     })}
 
-    <section class="metric-grid three-col">
-
-      ${MetricCard({
-        label: 'Content pieces',
-        value: '24',
-        detail: 'in current library',
-        accent: 'primary'
-      })}
-
-      ${MetricCard({
-        label: 'Strongest format',
-        value: 'Tutorial',
-        detail: 'based on observed saves',
-        accent: 'secondary'
-      })}
-
-      ${MetricCard({
-        label: 'Evidence signals',
-        value: '18',
-        detail: 'patterns observed',
-        accent: 'neutral'
-      })}
-
-    </section>
+    <div id="content-library-overview">
+      ${renderLibraryOverview()}
+    </div>
 
     <section class="panel content-library-panel">
 
@@ -144,6 +533,9 @@ export function renderContentLibrary() {
           <p class="small-note">
             Explore the evidence behind each content pattern.
           </p>
+
+          ${renderLibraryNotice()}
+
         </div>
 
         <div class="content-filters">
@@ -152,9 +544,9 @@ export function renderContentLibrary() {
               (filter, index) => `
                 <button
                   class="filter-button ${index === 0 ? 'active' : ''}"
-                  data-filter="${filter}"
+                  data-filter="${escapeHtml(filter)}"
                 >
-                  ${filter}
+                  ${escapeHtml(filter)}
                 </button>
               `
             )
@@ -163,85 +555,8 @@ export function renderContentLibrary() {
 
       </div>
 
-      <div class="content-list">
-
-        ${contentItems
-          .map(
-            (item) => `
-              <article
-                class="content-item"
-                data-content-type="${item.type}"
-              >
-
-                <div class="content-item-main">
-
-                  <div class="content-item-heading">
-
-                    <div>
-
-                      <div class="content-meta">
-                        <span>${item.platform}</span>
-                        <span>·</span>
-                        <span>${item.type}</span>
-                      </div>
-
-                      <h3>${item.title}</h3>
-
-                    </div>
-
-                    ${Tag({
-                      children: item.pattern,
-                      tone: 'primary'
-                    })}
-
-                  </div>
-
-                  <p class="content-evidence">
-                    ${item.evidence}
-                  </p>
-
-                  <div class="content-stats">
-
-                    <div>
-                      <span>Reach</span>
-                      <strong>${item.reach}</strong>
-                    </div>
-
-                    <div>
-                      <span>Engagement</span>
-                      <strong>${item.engagement}</strong>
-                    </div>
-
-                    <div>
-                      <span>Saves</span>
-                      <strong>${item.saves}</strong>
-                    </div>
-
-                  </div>
-
-                </div>
-
-                <div class="content-item-side">
-
-                  <span class="small-note">
-                    Evidence
-                  </span>
-
-                  <span class="evidence-mark">
-                    ✓
-                  </span>
-
-                  <span class="small-note">
-                    ${item.source}
-                  </span>
-
-                </div>
-
-              </article>
-            `
-          )
-          .join('')}
-
+      <div class="content-list" id="content-library-list">
+        ${renderContentItems()}
       </div>
 
     </section>
@@ -251,10 +566,12 @@ export function renderContentLibrary() {
       <div class="panel">
 
         ${EvidenceCard({
-          title: 'Tutorial content is creating a repeatable signal',
+          title: 'Content evidence builds over time',
           evidence:
-            'Step-by-step content appears repeatedly among the stronger save and engagement patterns in the current content history.',
-          source: 'Content history · multiple observations',
+            'Individual content pieces become more useful when repeated patterns appear across the creator history.',
+          source: contentState.usingDemoData
+            ? 'Frontend preview data'
+            : 'Live content data',
           tone: 'primary'
         })}
 
@@ -274,7 +591,7 @@ export function renderContentLibrary() {
   `;
 }
 
-export function mountContentLibrary() {
+function applyActiveFilter(selectedFilter) {
   const filterButtons =
     document.querySelectorAll('.filter-button');
 
@@ -282,33 +599,63 @@ export function mountContentLibrary() {
     document.querySelectorAll('.content-item');
 
   filterButtons.forEach((button) => {
+    button.classList.toggle(
+      'active',
+      button.dataset.filter === selectedFilter
+    );
+  });
+
+  contentItems.forEach((item) => {
+    const contentType =
+      item.dataset.contentType;
+
+    item.style.display =
+      selectedFilter === 'All content' ||
+      contentType === selectedFilter
+        ? ''
+        : 'none';
+  });
+}
+
+function updateContentLibrary() {
+  const list =
+    document.getElementById('content-library-list');
+
+  const overview =
+    document.getElementById('content-library-overview');
+
+  if (!list || !overview) {
+    return;
+  }
+
+  list.innerHTML = renderContentItems();
+  overview.innerHTML = renderLibraryOverview();
+
+  const activeButton =
+    document.querySelector('.filter-button.active');
+
+  applyActiveFilter(
+    activeButton?.dataset.filter || 'All content'
+  );
+
+  document.querySelectorAll('.filter-button').forEach((button) => {
     button.addEventListener('click', () => {
-
-      const selectedFilter =
-        button.dataset.filter;
-
-      filterButtons.forEach((item) => {
-        item.classList.remove('active');
-      });
-
-      button.classList.add('active');
-
-      contentItems.forEach((item) => {
-
-        const contentType =
-          item.dataset.contentType;
-
-        if (
-          selectedFilter === 'All content' ||
-          contentType === selectedFilter
-        ) {
-          item.style.display = '';
-        } else {
-          item.style.display = 'none';
-        }
-
-      });
-
+      applyActiveFilter(button.dataset.filter);
     });
   });
+}
+
+export function mountContentLibrary() {
+  document.querySelectorAll('.filter-button').forEach((button) => {
+    button.addEventListener('click', () => {
+      applyActiveFilter(button.dataset.filter);
+    });
+  });
+
+  /*
+   * Start with the existing frontend data so the page
+   * renders immediately, then try to replace it with
+   * live backend data.
+   */
+  loadContentData();
 }
